@@ -35,36 +35,26 @@ class RCode(Enum):
     NOT_IMPLEMENTED = 4
     REFUSED = 5
 
-class FromInt:
-    @classmethod
-    def from_int(cls, i: int) -> ty.Self:
-        try:
-            return cls(i)
-        except ValueError:
-            return cls.UNKNOWN
-
-class ResourceType(FromInt, Enum):
+class ResourceType(Enum):
     A = 1
-    UNKNOWN = 999
 
-class ResourceClass(FromInt, Enum):
+class ResourceClass(Enum):
     IN = 1
-    UNKNOWN = 999
 
 DomainName = list[str]  # labels
 
 @dataclass
 class DnsQuestion:
     name: DomainName
-    q_type: ResourceType
-    q_class: ResourceClass
+    q_type: int
+    q_class: int
 
 @dataclass
 class DnsResource:
     # the r_ prefixes are not standard, but to avoid "type" and "class" python reserved words
     name: DomainName
-    r_type: ResourceType
-    r_class: ResourceClass
+    r_type: int
+    r_class: int
     ttl: int
     data: DnsResourceData
 
@@ -77,7 +67,7 @@ class DnsResourceData(abc.ABC):
 class DnsResourceDataUnknown(DnsResourceData):
     r_data: bytes
 
-    def try_from_bytes(r_type: ResourceType, r_class: ResourceClass, msg: bytes) -> DnsResourceDataUnknown:
+    def try_from_bytes(r_type: int, r_class: int, msg: bytes) -> DnsResourceDataUnknown:
         return DnsResourceDataUnknown(msg)
 
     def to_bytes(self) -> bytes:
@@ -104,8 +94,8 @@ class DnsResourceDataA(DnsResourceData):
     ip_addr: IPv4Address
 
     @staticmethod
-    def try_from_bytes(r_type: ResourceType, r_class: ResourceClass, msg: bytes) -> DnsResourceDataA | None:
-        if r_type != ResourceType.A or r_type != ResourceClass.IN:
+    def try_from_bytes(r_type: int, r_class: int, msg: bytes) -> DnsResourceDataA | None:
+        if r_type != ResourceType.A.value or r_type != ResourceClass.IN.value:
             return None
 
         if len(msg) != 4:
@@ -186,9 +176,7 @@ class DnsMessage:
             name, msg = parse_domain_name(msg)
 
             typeclass, msg = bsplit(msg, 4)
-            q_type_int, q_class_int = struct.unpack("!HH", typeclass)
-            q_type = ResourceType.from_int(q_type_int)
-            q_class = ResourceClass.from_int(q_class_int)
+            q_type, q_class = struct.unpack("!HH", typeclass)
 
             questions.append(DnsQuestion(name=name, q_type=q_type, q_class=q_class))
 
@@ -197,10 +185,7 @@ class DnsMessage:
             for i in range(how_many):
                 name, msg = parse_domain_name(msg)
                 header, msg = bsplit(msg, 10)
-                type_int, class_int, ttl, r_dlength = struct.unpack("!HHLH", header)
-
-                r_type = ResourceType.from_int(type_int)
-                r_class = ResourceClass.from_int(class_int)
+                r_type, r_class, ttl, r_dlength = struct.unpack("!HHLH", header)
 
                 r_data, msg = bsplit(msg, r_dlength)
                 for dns_resource_data_class in dns_resource_data_classes:
@@ -258,7 +243,7 @@ class DnsMessage:
 
         for question in self.questions:
            msg += serialize_domain_name(question.name)
-           msg += struct.pack("!HH", question.q_type.value, question.q_class.value)
+           msg += struct.pack("!HH", question.q_type, question.q_class)
 
         def serialize_resources(resources: list[DnsResource]) -> bytes:
             msg = bytes()
@@ -266,7 +251,7 @@ class DnsMessage:
                 data_bytes = resource.data.to_bytes()
 
                 msg += serialize_domain_name(resource.name)
-                msg += struct.pack("!HHLH", resource.r_type.value, resource.r_class.value, resource.ttl, len(data_bytes))
+                msg += struct.pack("!HHLH", resource.r_type, resource.r_class, resource.ttl, len(data_bytes))
                 msg += resource.data.to_bytes()
             return msg
 
@@ -293,7 +278,7 @@ def parse_english_number(in_english: str) -> int | None:
 
 def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -> DnsMessage:
     def question_to_answer(question: DnsQuestion) -> DnsResource | None:
-        if question.q_type != ResourceType.A or question.q_class != ResourceClass.IN:
+        if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
             _LOGGER.debug("Question is not A/IN, skipping")
             return None
         if len(question.name) < len(base_domain) + 4:
@@ -325,8 +310,8 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
 
         return DnsResource(
             name=question.name,
-            r_type=ResourceType.A,
-            r_class=ResourceClass.IN,
+            r_type=ResourceType.A.value,
+            r_class=ResourceClass.IN.value,
             ttl=86400,
             data=DnsResourceDataA(ip),
         )
@@ -349,6 +334,23 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
         additionals = [],
     )
 
+def compute_error_response(query: DnsMessage, rcode: RCode) -> DnsMessage:
+    return DnsMessage(
+        transaction_id=query.transaction_id,
+        query_response=QueryResponse.RESPONSE,
+        opcode=OpCode.STANDARD_QUERY,
+        authoritative_answer=False,
+        truncation=False,
+        recursion_desired=False,
+        recursion_available=False,
+        z=0,
+        rcode=rcode,
+        questions=query.questions,
+        answers=[],
+        authorities=[],
+        additionals=[],
+    )
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-domain", required=True,
@@ -367,10 +369,22 @@ def main():
     print(f"Listening on {args.listen_host}:{args.listen_port}")
 
     while True:
-        data, addr = sock.recvfrom(512)
-        query = DnsMessage.parse(data)
-        response = compute_response(query=query, base_domain=base_domain, reverse=args.reverse)
-        sock.sendto(response.serialize(), addr)
+        try:
+            data, addr = sock.recvfrom(512)
+
+            try:
+                query = DnsMessage.parse(data)
+                response = compute_response(query=query, base_domain=base_domain, reverse=args.reverse)
+            except DnsFormatError as e:
+                _LOGGER.warning(f"DNS format error: {e}")
+                response = compute_error_response(query, rcode=RCode.FORMAT_ERROR)
+            except Exception as e:
+                _LOGGER.warning(f"Error, sending error response: {e}")
+                response = compute_error_response(query, rcode=RCode.SERVER_FAILURE)
+
+            sock.sendto(response.serialize(), addr)
+        except Exception as e:
+            _LOGGER.error(f"Error not handled gracefully! {e}")
 
 if __name__ == "__main__":
     main()

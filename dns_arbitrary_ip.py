@@ -276,7 +276,22 @@ class DnsMessage:
 
         return msg
 
-def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool, englishify: bool) -> DnsMessage:
+def parse_english_number(in_english: str) -> int | None:
+    english_digits = in_english.split("-")
+    if len(english_digits) > 3:
+        return None
+
+    english_to_int = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+
+    num = 0
+    for i, english_digit in enumerate(reversed(english_digits)):
+        digit = english_to_int.get(english_digit)
+        if digit is None:
+            return None
+        num += 10**i * digit
+    return num
+
+def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -> DnsMessage:
     def question_to_answer(question: DnsQuestion) -> DnsResource | None:
         if question.q_type != ResourceType.A or question.q_class != ResourceClass.IN:
             _LOGGER.debug("Question is not A/IN, skipping")
@@ -294,32 +309,17 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool, e
 
         ip_int_labels: list[int] = []
         for label in ip_labels:
-            if englishify:
-                english_digits = label.split("-")
-                if len(english_digits) > 3:
-                    _LOGGER.debug("Question contains >3 englishified IP numbers, skipping")
-                    return None
+            try:
+                int_label = int(label)
+            except ValueError:
+                int_label = parse_english_number(label)
+                if int_label is None:
+                    _LOGGER.debug(f"Question label was neither numeric nor english, skipping: '{label}'")
 
-                english_to_int = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
-
-                num = 0
-                for i, english_digit in enumerate(reversed(english_digits)):
-                    digit = english_to_int.get(english_digit)
-                    if digit is None:
-                        _LOGGER.debug(f"Question contains an invalid English digit '{english_digit}', skipping")
-                        return None
-                    num += 10**i * digit
-                ip_int_labels.append(num)
-            else:  # not englishify
-                try:
-                    int_label = int(label)
-                except ValueError:
-                    _LOGGER.debug("Question contains an IP part that's not integral, skipping")
-                    return None
-                if not (0 <= int_label <= 0xFF):
-                    _LOGGER.debug("Question contains an IP part out of the [0, 0xFF] range, skipping")
-                    return None
-                ip_int_labels.append(int_label)
+            if not (0 <= int_label <= 0xFF):
+                _LOGGER.debug("Question contains an IP part out of the [0, 0xFF] range, skipping")
+                return None
+            ip_int_labels.append(int_label)
 
         ip = IPv4Address(*ip_int_labels)
 
@@ -355,8 +355,6 @@ def main():
                         help="Domain under which the ip-specific domains live. Eg, if ip.markasoftware.com, then 192.168.0.1.ip.markasoftware.com will work")
     parser.add_argument("--reverse", action="store_true",
                         help="If set, then IPs will be reversed, eg 1.0.168.192.markasoftware.com would resolve to 192.168.0.1.")
-    parser.add_argument("--englishify", action="store_true",
-                        help="If set, then IPs will be in english, eg one-nine-two.one-six-eight.zero.one.markasoftware.com -> 192.168.0.1")
     parser.add_argument("--listen-host", default="0.0.0.0")
     parser.add_argument("--listen-port", default="53")
     args = parser.parse_args()
@@ -371,7 +369,7 @@ def main():
     while True:
         data, addr = sock.recvfrom(512)
         query = DnsMessage.parse(data)
-        response = compute_response(query=query, base_domain=base_domain, reverse=args.reverse, englishify=args.englishify)
+        response = compute_response(query=query, base_domain=base_domain, reverse=args.reverse)
         sock.sendto(response.serialize(), addr)
 
 if __name__ == "__main__":

@@ -300,6 +300,7 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
                 int_label = parse_english_number(label)
                 if int_label is None:
                     _LOGGER.debug(f"Question label was neither numeric nor english, skipping: '{label}'")
+                    return None
 
             if not (0 <= int_label <= 0xFF):
                 _LOGGER.debug("Question contains an IP part out of the [0, 0xFF] range, skipping")

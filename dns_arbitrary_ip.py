@@ -147,7 +147,7 @@ class DnsMessage:
                 if (label_length >> 6) == 0b11:
                     _LOGGER.debug("Compressed domain name!")
                     label_length_2, msg = bsplit_1(msg)
-                    offset = (label_length & 0b111111 << 8) + label_length_2
+                    offset = ((label_length & 0b111111) << 8) + label_length_2
                     pointed_to_domain_name, _ = parse_domain_name(orig_msg[offset:])
                     labels += pointed_to_domain_name
                     # an offset must be the last entry in a domain, so we're done

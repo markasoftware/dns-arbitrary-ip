@@ -2,6 +2,8 @@
 
 DNS server that resolves subdomains to arbitrary IPs. Eg, `192.168.0.1.ip.markasoftware.com` -> `192.168.0.1`
 
+This is already hosted at `ip.markasoftware.com` if you want to test it out: `dig 192.168.0.1.ip.markasoftware.com`.
+
 This is useful for pentesting in cases when a reserved IP like 192.168.0.1 might be blocked, but domain names that resolve to 192.168.0.1 aren't blocked.
 
 Sometimes a simple blocker might just look for a banned IP as a substring, you can also write the IPs in english: `one-nine-two.one-six-eight.zero.one.ip.markasoftware.com` for example to bypass this.

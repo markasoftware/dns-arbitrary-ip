@@ -10,7 +10,7 @@ trap 'kill $(jobs -p)' EXIT
 ./dns_arbitrary_ip.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" &
 sleep 1 # give it time to start up
 
-# @param $1 the hostname to query, under the 
+# @param $1 the subdomain to query under the base domain
 big_dig() {
     local subdomain="$1"
     dig @127.0.0.1 -p "$listen_port" -q "$subdomain.$base_domain" -t A +short +timeout=1

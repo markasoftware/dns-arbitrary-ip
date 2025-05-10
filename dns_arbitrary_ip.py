@@ -68,7 +68,7 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
             data=DnsResourceDataA(ip),
         )
     
-    answers: list[DnsResource] = list(filter(lambda x: isinstance(x, DnsResource), map(question_to_answer, query.questions))) # type: ignore[arg-type]
+    answers: list[DnsResource] = list(filter(lambda x: x is not None, map(question_to_answer, query.questions))) # type: ignore[arg-type]
 
     return DnsMessage(
         transaction_id = query.transaction_id,

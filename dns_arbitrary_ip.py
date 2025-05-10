@@ -7,7 +7,7 @@ from ipaddress import IPv4Address
 import logging
 import socket
 
-from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType
+from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType, domains_equal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,11 +34,11 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
         if len(question.name) < len(base_domain) + 4:
             _LOGGER.debug("Question name not long enough, skipping")
             return None
-        if question.name[4:] != base_domain:
+        if not domains_equal(question.name[4:], base_domain):
             _LOGGER.debug("Question name is not under base domain, skipping")
             return None
 
-        ip_labels = question.name[:4]
+        ip_labels = [qn.lower() for qn in question.name[:4]] # notice the .lower()!
         if reverse:
             ip_labels.reverse()
 

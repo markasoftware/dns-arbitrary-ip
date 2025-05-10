@@ -24,6 +24,9 @@ fail_msg() {
 
 [[ $(big_dig 192.168.0.1) == 192.168.0.1 ]] || fail_msg "Couldn't do basic numeric query"
 [[ $(big_dig one-nine-two.168.zero.one) == 192.168.0.1 ]] || fail_msg "Couldn't do mixed english-number query"
+[[ $(big_dig OnE-NINE-two.168.zerO.oNe) == 192.168.0.1 ]] || fail_msg "Couldn't do mixed-case mixed english-number query"
+base_domain="${base_domain//a/A}"
+[[ $(big_dig 192.168.0.1) == 192.168.0.1 ]] || fail_msg "Couldn't do mixed-case base domain query"
 
 set +x
 echo

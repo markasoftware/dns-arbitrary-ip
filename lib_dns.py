@@ -242,3 +242,9 @@ class DnsMessage:
         msg += serialize_resources(self.additionals)
 
         return msg
+
+def domains_equal(domain_1: list[str], domain_2: list[str]) -> bool:
+    return [dn1.lower() for dn1 in domain_1] == [dn2.lower() for dn2 in domain_2]
+
+def domain_label_equal(label_1: str, label_2: str) -> bool:
+    return label_1.lower() == label_2.lower()

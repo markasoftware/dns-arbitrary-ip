@@ -39,6 +39,14 @@ fail_msg() {
 
 [[ $(big_dig foo 127.0.0.2) == 8.8.8.8 ]] || fail_msg "Wrong result using second IP on first subdomain for the last time"
 
+[[ $(big_dig FoO 127.0.0.2) == 8.8.8.8 ]] || fail_msg "Wrong result with inconsistent subdomain casing"
+# there's actually a bit of a different code path if the first one has uppercasing, so let's test that
+[[ $(big_dig HACK 127.0.0.1) == 1.1.1.1 ]] || fail_msg "wtf, we already tested this"
+[[ $(big_dig HACK 127.0.0.2) == 8.8.8.8 ]] || fail_msg "Wrong result on second req when first had inconsistent subdomain casing"
+
+base_domain="${base_domain//a/A}"
+[[ $(big_dig foo 127.0.0.2) == 8.8.8.8 ]] || fail_msg "Wrong result with inconsistent base domain casing"
+
 set +x
 echo
 echo All tests passed!

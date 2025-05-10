@@ -10,7 +10,7 @@ import logging
 import socket
 import typing as ty
 
-from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType
+from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType, domains_equal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,11 +33,11 @@ def compute_response(query: DnsMessage, get_ephemeral_domain: ty.Callable[[str],
         if len(question.name) != len(base_domain) + 1:
             _LOGGER.debug("Question name not the right length, skipping")
             return None
-        if question.name[1:] != base_domain:
+        if not domains_equal(question.name[1:], base_domain):
             _LOGGER.debug("Question name is not under base domain, skipping")
             return None
 
-        ephemeral_label = question.name[0]
+        ephemeral_label = question.name[0].lower() # notice the .lower()!
         ephemeral_domain = get_ephemeral_domain(ephemeral_label)
 
         already_assigned_ip = ephemeral_domain.assigned_ips.get(source_ip)

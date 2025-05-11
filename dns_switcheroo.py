@@ -9,14 +9,13 @@ from functools import lru_cache
 import logging
 import typing as ty
 
-from lib_dns import DnsQuestion, DnsResource, DnsResourceDataA, ResourceClass, ResourceType, domains_equal
-from server_common import DnsPerQuestionServer
+from server_common import DnsPerQuestionSimpleServer
 
 _LOGGER = logging.getLogger(__name__)
 
-class DnsSwitcherooServer(DnsPerQuestionServer):
+class DnsSwitcherooServer(DnsPerQuestionSimpleServer):
     def __init__(self, base_domain: list[str], ips: list[IPv4Address]) -> None:
-        self.base_domain: list[str] = base_domain
+        super().__init__(base_domain=base_domain)
 
         @lru_cache(maxsize=2048)
         def get_ephemeral_domain(domain: str) -> EphemeralDomain:
@@ -25,45 +24,30 @@ class DnsSwitcherooServer(DnsPerQuestionServer):
 
         self.get_ephemeral_domain: ty.Callable[[str], EphemeralDomain] = get_ephemeral_domain
 
-    def compute_answer(self, question: DnsQuestion, source_ip: IPv4Address, source_port: int) -> DnsResource | None:
-        def ip_to_resource(ip: IPv4Address) -> DnsResource:
-            return DnsResource(
-                name=question.name,
-                r_type=ResourceType.A.value,
-                r_class=ResourceClass.IN.value,
-                ttl=86400,
-                data=DnsResourceDataA(ip),
-            )
-
-        if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
-            _LOGGER.debug("Question is not A/IN, skipping")
-            return None
-        if len(question.name) != len(self.base_domain) + 1:
+    def compute_simple_answer(self, query_domain: list[str], source_ip: IPv4Address, source_port: int) -> IPv4Address | None:
+        if len(query_domain) != 1:
             _LOGGER.debug("Question name not the right length, skipping")
             return None
-        if not domains_equal(question.name[1:], self.base_domain):
-            _LOGGER.debug("Question name is not under base domain, skipping")
-            return None
 
-        ephemeral_label = question.name[0].lower() # notice the .lower()!
+        ephemeral_label = query_domain[0].lower() # notice the .lower()!
         ephemeral_domain = self.get_ephemeral_domain(ephemeral_label)
 
         already_assigned_ip = ephemeral_domain.assigned_ips.get(source_ip)
         if already_assigned_ip:
             _LOGGER.debug(f"IP already assigned for {source_ip} on subdomain {ephemeral_label}: {already_assigned_ip}")
-            return ip_to_resource(already_assigned_ip)
+            return already_assigned_ip
 
         assert ephemeral_domain.remaining_ips, "ephemeral_domain.remaining_ips should never be empty"
 
         if len(ephemeral_domain.remaining_ips) == 1:
             _LOGGER.debug(f"Only one IP left on subdomain {ephemeral_label} and source {source_ip} is unknown: {already_assigned_ip}")
-            return ip_to_resource(ephemeral_domain.remaining_ips[0])
+            return ephemeral_domain.remaining_ips[0]
 
         result_ip = ephemeral_domain.remaining_ips[0]
         ephemeral_domain.remaining_ips = ephemeral_domain.remaining_ips[1:]
         ephemeral_domain.assigned_ips[source_ip] = result_ip
         _LOGGER.debug(f"Source IP {source_ip} on subdomain {ephemeral_label} is now assigned to: {result_ip}")
-        return ip_to_resource(result_ip)
+        return result_ip
 
 @dataclass
 class EphemeralDomain:

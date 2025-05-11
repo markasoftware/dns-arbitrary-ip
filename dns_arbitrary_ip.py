@@ -6,8 +6,7 @@ import argparse
 from ipaddress import IPv4Address
 import logging
 
-from lib_dns import DnsQuestion, DnsResource, DnsResourceDataA, ResourceClass, ResourceType, domains_equal
-from server_common import DnsPerQuestionServer
+from server_common import DnsPerQuestionSimpleServer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,23 +25,17 @@ def parse_english_number(in_english: str) -> int | None:
         num += 10**i * digit
     return num
 
-class DnsArbitraryIpServer(DnsPerQuestionServer):
+class DnsArbitraryIpServer(DnsPerQuestionSimpleServer):
     def __init__(self, base_domain: list[str], reverse: bool) -> None:
-        self.base_domain = base_domain
-        self.reverse = reverse
+        super().__init__(base_domain)
+        self.reverse: bool = reverse
 
-    def compute_answer(self, question: DnsQuestion, source_ip: IPv4Address, source_port: int) -> DnsResource | None:
-        if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
-            _LOGGER.debug("Question is not A/IN, skipping")
-            return None
-        if len(question.name) < len(self.base_domain) + 4:
+    def compute_simple_answer(self, query_domain: list[str], source_ip: IPv4Address, source_port: int) -> IPv4Address | None:
+        if len(query_domain) < 4:
             _LOGGER.debug("Question name not long enough, skipping")
             return None
-        if not domains_equal(question.name[4:], self.base_domain):
-            _LOGGER.debug("Question name is not under base domain, skipping")
-            return None
 
-        ip_labels = [qn.lower() for qn in question.name[:4]] # notice the .lower()!
+        ip_labels = [qn.lower() for qn in query_domain] # notice the .lower()!
         if self.reverse:
             ip_labels.reverse()
 
@@ -62,15 +55,7 @@ class DnsArbitraryIpServer(DnsPerQuestionServer):
                 return None
             ip_int_labels.append(int_label)
 
-        ip = IPv4Address(bytes(ip_int_labels))
-
-        return DnsResource(
-            name=question.name,
-            r_type=ResourceType.A.value,
-            r_class=ResourceClass.IN.value,
-            ttl=86400,
-            data=DnsResourceDataA(ip),
-        )
+        return IPv4Address(bytes(ip_int_labels))
 
 def main():
     parser = argparse.ArgumentParser()

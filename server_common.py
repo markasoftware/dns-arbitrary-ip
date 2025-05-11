@@ -3,7 +3,7 @@ from ipaddress import IPv4Address
 import logging
 import socket
 
-from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, OpCode, QueryResponse, RCode
+from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType, domains_equal
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -95,4 +95,34 @@ class DnsPerQuestionServer(DnsServer, abc.ABC):
             answers = answers,
             authorities = [],
             additionals = [],
+        )
+
+class DnsPerQuestionSimpleServer(DnsPerQuestionServer, abc.ABC):
+    """Like DnsPerQuestionServer, but only supports A records and also has a "base domain" that it checks that all requests are under."""
+    def __init__(self, base_domain: list[str], ttl: int = 86400) -> None:
+        self.base_domain: list[str] = base_domain
+        self.ttl: int = ttl
+
+    @abc.abstractmethod
+    def compute_simple_answer(self, query_domain: list[str], source_ip: IPv4Address, source_port: int) -> IPv4Address | None:
+        ...
+
+    def compute_answer(self, question: DnsQuestion, source_ip: IPv4Address, source_port: int) -> DnsResource | None:
+        if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
+            _LOGGER.debug("Question is not A/IN, skipping")
+            return None
+        if not domains_equal(question.name[-len(self.base_domain):], self.base_domain):
+            _LOGGER.debug("Question name is not under base domain, skipping")
+            return None
+
+        result_ip = self.compute_simple_answer(question.name[:-len(self.base_domain)], source_ip=source_ip, source_port=source_port)
+        if result_ip is None:
+            return None
+
+        return DnsResource(
+            name=question.name,
+            r_type=ResourceType.A.value,
+            r_class=ResourceClass.IN.value,
+            ttl=self.ttl,
+            data=DnsResourceDataA(result_ip),
         )

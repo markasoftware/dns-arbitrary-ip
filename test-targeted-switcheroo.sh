@@ -29,7 +29,7 @@ fail_msg() {
 
 # @params all extra args to dns_targeted_switcheroo.py 
 start_server() {
-    ./dns_targeted_switcheroo.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" --public-dns-server 127.0.0.1 --public-dns-server-port "$dnsmasq_port" "$@" &
+    python3 dns_targeted_switcheroo.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" --public-dns-server 127.0.0.1 --public-dns-server-port "$dnsmasq_port" "$@" &
     our_pid="$!"
     sleep 1
 }

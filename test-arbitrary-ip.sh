@@ -7,7 +7,7 @@ listen_port=3553
 
 # start the server and be sure to kill it when we're done
 trap 'kill $(jobs -p)' EXIT
-./dns_arbitrary_ip.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" &
+python3 dns_arbitrary_ip.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" &
 sleep 1 # give it time to start up
 
 # @param $1 the subdomain to query under the base domain

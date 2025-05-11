@@ -7,7 +7,7 @@ listen_port=3553
 
 # start the server and be sure to kill it when we're done
 trap 'kill $(jobs -p)' EXIT
-./dns_switcheroo.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" --ip 1.1.1.1 --ip 8.8.8.8 --ip 192.168.0.1 &
+python3 dns_switcheroo.py --base-domain "$base_domain" --listen-host 127.0.0.1 --listen-port "$listen_port" --ip 1.1.1.1 --ip 8.8.8.8 --ip 192.168.0.1 &
 sleep 1 # give it time to start up
 
 # @param $1 the subdomain to query under the base domain

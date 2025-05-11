@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 
-./test-arbitrary-ip.sh
-./test-switcheroo.sh
-./test-targeted-switcheroo.sh
+bash test-arbitrary-ip.sh
+bash test-switcheroo.sh
+bash test-targeted-switcheroo.sh

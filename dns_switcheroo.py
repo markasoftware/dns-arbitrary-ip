@@ -7,17 +7,25 @@ from dataclasses import dataclass, field
 from ipaddress import IPv4Address
 from functools import lru_cache
 import logging
-import socket
 import typing as ty
 
-from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType, domains_equal
+from lib_dns import DnsQuestion, DnsResource, DnsResourceDataA, ResourceClass, ResourceType, domains_equal
+from server_common import DnsPerQuestionServer
 
 _LOGGER = logging.getLogger(__name__)
 
-def compute_response(query: DnsMessage, get_ephemeral_domain: ty.Callable[[str], EphemeralDomain], base_domain: list[str], source_ip: IPv4Address) -> DnsMessage:
-    assert isinstance(source_ip, IPv4Address), "type error"
+class DnsSwitcherooServer(DnsPerQuestionServer):
+    def __init__(self, base_domain: list[str], ips: list[IPv4Address]) -> None:
+        self.base_domain: list[str] = base_domain
 
-    def question_to_answer(question: DnsQuestion) -> DnsResource | None:
+        @lru_cache(maxsize=2048)
+        def get_ephemeral_domain(domain: str) -> EphemeralDomain:
+            """A bit of a hack -- we abuse @lru_cache because we actually mutate the output. `domain` arg is only the label before the base domain."""
+            return EphemeralDomain(remaining_ips=[IPv4Address(ip) for ip in ips])
+
+        self.get_ephemeral_domain: ty.Callable[[str], EphemeralDomain] = get_ephemeral_domain
+
+    def compute_answer(self, question: DnsQuestion, source_ip: IPv4Address, source_port: int) -> DnsResource | None:
         def ip_to_resource(ip: IPv4Address) -> DnsResource:
             return DnsResource(
                 name=question.name,
@@ -30,15 +38,15 @@ def compute_response(query: DnsMessage, get_ephemeral_domain: ty.Callable[[str],
         if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
             _LOGGER.debug("Question is not A/IN, skipping")
             return None
-        if len(question.name) != len(base_domain) + 1:
+        if len(question.name) != len(self.base_domain) + 1:
             _LOGGER.debug("Question name not the right length, skipping")
             return None
-        if not domains_equal(question.name[1:], base_domain):
+        if not domains_equal(question.name[1:], self.base_domain):
             _LOGGER.debug("Question name is not under base domain, skipping")
             return None
 
         ephemeral_label = question.name[0].lower() # notice the .lower()!
-        ephemeral_domain = get_ephemeral_domain(ephemeral_label)
+        ephemeral_domain = self.get_ephemeral_domain(ephemeral_label)
 
         already_assigned_ip = ephemeral_domain.assigned_ips.get(source_ip)
         if already_assigned_ip:
@@ -57,42 +65,6 @@ def compute_response(query: DnsMessage, get_ephemeral_domain: ty.Callable[[str],
         _LOGGER.debug(f"Source IP {source_ip} on subdomain {ephemeral_label} is now assigned to: {result_ip}")
         return ip_to_resource(result_ip)
 
-    answers: list[DnsResource] = list(filter(lambda x: x is not None, map(question_to_answer, query.questions))) # type: ignore[arg-type]
-
-    return DnsMessage(
-        transaction_id = query.transaction_id,
-        query_response = QueryResponse.RESPONSE,
-        opcode = OpCode.STANDARD_QUERY,
-        authoritative_answer = True,
-        truncation = False,
-        recursion_desired = False,
-        recursion_available = False,
-        z = 0,
-        rcode = RCode.NO_ERROR if len(answers) > 0 else RCode.NAME_ERROR,
-        questions = query.questions,
-        answers = answers,
-        authorities = [],
-        additionals = [],
-    )
-
-
-def compute_error_response(query: DnsMessage, rcode: RCode) -> DnsMessage:
-    return DnsMessage(
-        transaction_id=query.transaction_id,
-        query_response=QueryResponse.RESPONSE,
-        opcode=OpCode.STANDARD_QUERY,
-        authoritative_answer=False,
-        truncation=False,
-        recursion_desired=False,
-        recursion_available=False,
-        z=0,
-        rcode=rcode,
-        questions=query.questions,
-        answers=[],
-        authorities=[],
-        additionals=[],
-    )
-
 @dataclass
 class EphemeralDomain:
     remaining_ips: list[IPv4Address]
@@ -109,36 +81,10 @@ def main():
     args = parser.parse_args()
 
     base_domain = args.base_domain.split(".")
+    ips = [IPv4Address(ip) for ip in args.ip]
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((args.listen_host, int(args.listen_port)))
-
-    @lru_cache(maxsize=2048)
-    def ephemeral_domain(domain: str) -> EphemeralDomain:
-        """A bit of a hack -- we abuse @lru_cache because we actually mutate the output. `domain` arg is only the label before the base domain."""
-        return EphemeralDomain(remaining_ips=[IPv4Address(ip) for ip in args.ip])
-
-
-    print(f"Listening on {args.listen_host}:{args.listen_port}")
-
-    while True:
-        try:
-            data, source_addr = sock.recvfrom(512) # this addr, port prob only works for IPv4
-            source_ip = IPv4Address(source_addr[0]) # conscious choice not to include the source port as part of the logical source address
-
-            try:
-                query = DnsMessage.parse(data)
-                response = compute_response(query=query, base_domain=base_domain, source_ip=source_ip, get_ephemeral_domain=ephemeral_domain)
-            except DnsFormatError as e:
-                _LOGGER.warning(f"DNS format error: {e}")
-                response = compute_error_response(query, rcode=RCode.FORMAT_ERROR)
-            except Exception as e:
-                _LOGGER.warning(f"Error, sending error response: {e}")
-                response = compute_error_response(query, rcode=RCode.SERVER_FAILURE)
-
-            sock.sendto(response.serialize(), source_addr)
-        except Exception as e:
-            _LOGGER.error(f"Error not handled gracefully! {e}")
+    server = DnsSwitcherooServer(base_domain=base_domain, ips=ips)
+    server.listen(args.listen_host, int(args.listen_port))
 
 if __name__ == "__main__":
     logging.basicConfig()

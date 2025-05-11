@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 from ipaddress import IPv4Address
 import logging
-import socket
 
-from lib_dns import DnsFormatError, DnsMessage, DnsQuestion, DnsResource, DnsResourceDataA, OpCode, QueryResponse, RCode, ResourceClass, ResourceType, domains_equal
+from lib_dns import DnsQuestion, DnsResource, DnsResourceDataA, ResourceClass, ResourceType, domains_equal
+from server_common import DnsPerQuestionServer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -26,20 +26,24 @@ def parse_english_number(in_english: str) -> int | None:
         num += 10**i * digit
     return num
 
-def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -> DnsMessage:
-    def question_to_answer(question: DnsQuestion) -> DnsResource | None:
+class DnsArbitraryIpServer(DnsPerQuestionServer):
+    def __init__(self, base_domain: list[str], reverse: bool) -> None:
+        self.base_domain = base_domain
+        self.reverse = reverse
+
+    def compute_answer(self, question: DnsQuestion, source_ip: IPv4Address, source_port: int) -> DnsResource | None:
         if question.q_type != ResourceType.A.value or question.q_class != ResourceClass.IN.value:
             _LOGGER.debug("Question is not A/IN, skipping")
             return None
-        if len(question.name) < len(base_domain) + 4:
+        if len(question.name) < len(self.base_domain) + 4:
             _LOGGER.debug("Question name not long enough, skipping")
             return None
-        if not domains_equal(question.name[4:], base_domain):
+        if not domains_equal(question.name[4:], self.base_domain):
             _LOGGER.debug("Question name is not under base domain, skipping")
             return None
 
         ip_labels = [qn.lower() for qn in question.name[:4]] # notice the .lower()!
-        if reverse:
+        if self.reverse:
             ip_labels.reverse()
 
         ip_int_labels: list[int] = []
@@ -67,41 +71,6 @@ def compute_response(query: DnsMessage, base_domain: list[str], reverse: bool) -
             ttl=86400,
             data=DnsResourceDataA(ip),
         )
-    
-    answers: list[DnsResource] = list(filter(lambda x: x is not None, map(question_to_answer, query.questions))) # type: ignore[arg-type]
-
-    return DnsMessage(
-        transaction_id = query.transaction_id,
-        query_response = QueryResponse.RESPONSE,
-        opcode = OpCode.STANDARD_QUERY,
-        authoritative_answer = True,
-        truncation = False,
-        recursion_desired = False,
-        recursion_available = False,
-        z = 0,
-        rcode = RCode.NO_ERROR if len(answers) > 0 else RCode.NAME_ERROR,
-        questions = query.questions,
-        answers = answers,
-        authorities = [],
-        additionals = [],
-    )
-
-def compute_error_response(query: DnsMessage, rcode: RCode) -> DnsMessage:
-    return DnsMessage(
-        transaction_id=query.transaction_id,
-        query_response=QueryResponse.RESPONSE,
-        opcode=OpCode.STANDARD_QUERY,
-        authoritative_answer=False,
-        truncation=False,
-        recursion_desired=False,
-        recursion_available=False,
-        z=0,
-        rcode=rcode,
-        questions=query.questions,
-        answers=[],
-        authorities=[],
-        additionals=[],
-    )
 
 def main():
     parser = argparse.ArgumentParser()
@@ -115,28 +84,8 @@ def main():
 
     base_domain = args.base_domain.split(".")
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((args.listen_host, int(args.listen_port)))
-
-    print(f"Listening on {args.listen_host}:{args.listen_port}")
-
-    while True:
-        try:
-            data, addr = sock.recvfrom(512)
-
-            try:
-                query = DnsMessage.parse(data)
-                response = compute_response(query=query, base_domain=base_domain, reverse=args.reverse)
-            except DnsFormatError as e:
-                _LOGGER.warning(f"DNS format error: {e}")
-                response = compute_error_response(query, rcode=RCode.FORMAT_ERROR)
-            except Exception as e:
-                _LOGGER.warning(f"Error, sending error response: {e}")
-                response = compute_error_response(query, rcode=RCode.SERVER_FAILURE)
-
-            sock.sendto(response.serialize(), addr)
-        except Exception as e:
-            _LOGGER.error(f"Error not handled gracefully! {e}")
+    server = DnsArbitraryIpServer(base_domain, args.reverse)
+    server.listen(host=args.listen_host, port=int(args.listen_port))
 
 if __name__ == "__main__":
     logging.basicConfig()

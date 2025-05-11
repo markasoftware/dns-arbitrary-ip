@@ -2,7 +2,7 @@
 
 set -exuo pipefail
 
-base_domain=ip.markasoftware.com
+base_domain=switcheroo.markasoftware.com
 listen_port=3553
 
 # start the server and be sure to kill it when we're done

@@ -44,6 +44,12 @@
                   default = self.packages.${config.nixpkgs.system}.default;
                   description = "Package to use as dns-pentesting";
                 };
+
+                openFirewall = lib.mkOption {
+                  type = lib.types.bool;
+                  default = true;
+                  description = "open port in the firewall";
+                };
               };
             };
 
@@ -58,6 +64,8 @@
                            ExecStart = "${cfg.package}/bin/${program.binName} ${lib.escapeShellArgs cfg.cliArgs}";
                          };
                        };
+
+                       networking.firewall.allowedUDPPorts = lib.mkIf cfg.openFirewall [ 53 ];
                      };
           });
     };

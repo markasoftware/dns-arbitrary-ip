@@ -64,6 +64,11 @@ start_server --ip-mapping notachance,8.8.8.8 --ip-mapping foo.my-tld,78.87.78.87
 [[ $(big_dig foo 127.0.0.1) == 5.6.7.8 ]] || fail_msg "Many matchers, all failed"
 stop_server
 
+start_server --fallback-ip 5.6.7.8
+base_domain="${base_domain//a/A}"
+[[ $(big_dig foo 127.0.0.1) == 5.6.7.8 ]] || fail_msg "Should use fallback IP when no matchers specified"
+stop_server
+
 set +x
 echo
 echo All tests passed!

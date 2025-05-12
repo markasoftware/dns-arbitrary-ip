@@ -30,7 +30,7 @@ stdenv.mkDerivation {
 
   checkPhase = "bash test-all.sh";
 
-  # doCheck = true;
+  doCheck = true;
 
   installPhase = ''
     mkdir -p "$out/bin"

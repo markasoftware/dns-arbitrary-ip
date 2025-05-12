@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from ipaddress import IPv4Address
 import logging
+import shutil
 import subprocess
 
 from server_common import DnsPerQuestionSimpleServer
@@ -12,10 +13,8 @@ from server_common import DnsPerQuestionSimpleServer
 _LOGGER = logging.getLogger(__name__)
 
 def check_dig_exists() -> None:
-    try:
-        subprocess.check_call(["which", "dig"])
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError("Missing `dig` -- needed for this dns server") from e
+    if shutil.which("dig") is None:
+        raise RuntimeError("Missing `dig` -- needed for this dns server")
 
 def reverse_dns_lookup(address: IPv4Address, public_dns_server: IPv4Address, public_dns_server_port: int) -> str:
     # I don't think we actually need `+norrcomments` but it can't hurt

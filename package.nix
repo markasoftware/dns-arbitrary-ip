@@ -12,12 +12,7 @@
 
 stdenv.mkDerivation {
   name = "markasoftware-dns-pentesting";
-  src = fetchFromGitHub {
-    owner = "markasoftware";
-    repo = "dns-pentesting";
-    rev = "d45a030bb19fc1737df908a9e7bc8ed90bece174";
-    hash = "sha256-AfKsRnbPEh+jwh0GWXw/9zlUKUDfPhXQ9ZmiZiI9m/o=";
-  };
+  src = ./.;
 
   nativeBuildInputs = [
     makeWrapper

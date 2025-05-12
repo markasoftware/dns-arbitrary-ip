@@ -23,38 +23,42 @@
         });
       }
     ) // {
-      nixosModules = {config, pkgs, lib, ...}:
-        dns-programs.each (program: {
-          options = {
-            services.${program.attrName} = {
-              enable = lib.mkOption {
-                type = lib.types.bool;
-                default = false;
-                description = "Enable ${program.binName} systemd service";
-              };
+        nixosModules = dns-programs.each (program:
+          {config, pkgs, lib, ...}: {
+            options = {
+              services.${program.attrName} = {
+                enable = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = "Enable ${program.binName} systemd service";
+                };
 
-              cliArgs = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                default = [];
-                description = "extra CLI arguments";
-              };
+                cliArgs = lib.mkOption {
+                  type = lib.types.listOf lib.types.str;
+                  default = [];
+                  description = "extra CLI arguments";
+                };
 
-              package = lib.mkPackageOption pkgs "${program.attrName}" {};
+                package = lib.mkOption {
+                  type = lib.types.package;
+                  default = self.packages.${config.nixpkgs.system}.default;
+                  description = "Package to use as dns-pentesting";
+                };
+              };
             };
-          };
 
-          config = let cfg = config.services.${program.attrName};
-                   in lib.mkIf cfg.enable {
-                     systemd.services.${program.attrName} = {
-                       description = "DNS pentesting tool: ${program.binName}";
-                       after = ["network.target"];
-                       wantedBy = ["multi-user.target"];
-                       serviceConfig = {
-                         Restart = "on-failure";
-                         ExecStart = "${cfg.package}/bin/${program.binName} ${lib.escapeShellArgs cfg.cliArgs}";
+            config = let cfg = config.services.${program.attrName};
+                     in lib.mkIf cfg.enable {
+                       systemd.services.${program.attrName} = {
+                         description = "DNS pentesting tool: ${program.binName}";
+                         after = ["network.target"];
+                         wantedBy = ["multi-user.target"];
+                         serviceConfig = {
+                           Restart = "on-failure";
+                           ExecStart = "${cfg.package}/bin/${program.binName} ${lib.escapeShellArgs cfg.cliArgs}";
+                         };
                        };
                      };
-                   };
-        });
+          });
     };
 }
